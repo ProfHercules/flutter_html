@@ -75,6 +75,7 @@ class ImageContentElement extends ReplacedElement {
 
   @override
   Widget toWidget(RenderContext context) {
+    print(src);
     Widget imageWidget;
     if (src == null) {
       imageWidget = Text(alt ?? "", style: context.style.generateTextStyle());

@@ -1,9 +1,13 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_html/html_parser.dart';
 import 'package:flutter_html/src/html_elements.dart';
 import 'package:flutter_html/src/styled_element.dart';
 import 'package:flutter_html/style.dart';
 import 'package:html/dom.dart' as dom;
+
+import 'styled_element.dart';
 
 /// A [LayoutElement] is an element that breaks the normal Inline flow of
 /// an html document with a more complex layout. LayoutElements handle
@@ -86,14 +90,24 @@ class TableSectionLayoutElement extends LayoutElement {
   }
 
   List<TableRow> toTableRows(RenderContext context) {
-    return children.map((c) {
-      if (c is TableRowLayoutElement) {
-        return c.toTableRow(context);
-      }
-      return null;
-    }).where((t) {
-      return t != null;
-    }).toList();
+    final rawHtmlElements = children.whereType<TableRowLayoutElement>();
+    final tableRowLayoutElements = <TableRowLayoutElement>[];
+    rawHtmlElements.forEach((row) {
+      final newChildren = row.children
+          .whereType<StyledElement>()
+          .where((c) => (c.name == 'td' || c.name == 'th'))
+          .toList();
+      row.children = newChildren;
+      tableRowLayoutElements.add(row);
+    });
+
+    final maxChildCount =
+        tableRowLayoutElements.map((c) => c.children.length).reduce(max);
+
+    return tableRowLayoutElements
+        // .where((e) => e.children.length == maxChildCount)
+        .map((tr) => tr.toTableRow(context, maxChildCount))
+        .toList();
   }
 }
 
@@ -109,31 +123,74 @@ class TableRowLayoutElement extends LayoutElement {
     return Container(child: Text("TABLE ROW"));
   }
 
-  TableRow toTableRow(RenderContext context) {
+  List<String> _splitTitle(String title, int count) {
+    final split = title.split(" ");
+    final partCount = split.length;
+    if (partCount == count) return split;
+    if (partCount < count) {
+      final diff = count - partCount;
+      var before = (diff * 0.5).floor();
+      var after = (diff * 0.5).ceil();
+      while (before > 0) {
+        split.insert(0, "");
+        before -= 1;
+      }
+      while (after > 0) {
+        split.add("");
+        after -= 1;
+      }
+      return split;
+    } else {
+      return split.sublist(0, count - 1);
+    }
+  }
+
+  TableRow toTableRow(RenderContext context, [int childCountTarget]) {
+    var styledElemChildren = <Widget>[];
+
+    if (children.length != 1) {
+      styledElemChildren = children.whereType<StyledElement>().map((c) {
+        if (c.name == 'td' || c.name == 'th') {
+          return TableCell(
+            child: Container(
+              padding: c.style.padding,
+              decoration: BoxDecoration(
+                color: c.style.backgroundColor,
+                border: c.style.border,
+              ),
+              child: StyledText(
+                textSpan: context.parser.parseTree(context, c),
+                style: c.style,
+              ),
+            ),
+          );
+        } else {
+          return Container();
+        }
+      }).toList();
+    }
+
+    if (styledElemChildren.length < childCountTarget) {
+      final diff = childCountTarget - styledElemChildren.length;
+      var before = (diff * 0.5).floor();
+      var after = (diff * 0.5).ceil();
+      while (before > 0) {
+        styledElemChildren.insert(0, Container());
+        before -= 1;
+      }
+      while (after > 0) {
+        styledElemChildren.add(Container());
+        after -= 1;
+      }
+    }
+
     return TableRow(
-        decoration: BoxDecoration(
-          border: style.border,
-          color: style.backgroundColor,
-        ),
-        children: children
-            .map((c) {
-              if (c is StyledElement && c.name == 'td' || c.name == 'th') {
-                return TableCell(
-                    child: Container(
-                        padding: c.style.padding,
-                        decoration: BoxDecoration(
-                          color: c.style.backgroundColor,
-                          border: c.style.border,
-                        ),
-                        child: StyledText(
-                          textSpan: context.parser.parseTree(context, c),
-                          style: c.style,
-                        )));
-              }
-              return null;
-            })
-            .where((c) => c != null)
-            .toList());
+      decoration: BoxDecoration(
+        border: style.border,
+        color: style.backgroundColor,
+      ),
+      children: styledElemChildren,
+    );
   }
 }
 
